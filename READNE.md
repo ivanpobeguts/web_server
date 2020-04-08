@@ -6,41 +6,40 @@ Simple python http server build on sockets. It's based on TCP server. Eash conne
 Testing results with Apache Bench:
 ```bash
 Server Software:        Python-WebServer
-Server Hostname:        0.0.0.0
+Server Hostname:        localhost
 Server Port:            80
 
 Document Path:          /
-Document Length:        0 bytes
+Document Length:        34 bytes
 
 Concurrency Level:      100
-Time taken for tests:   278.063 seconds
+Time taken for tests:   267.683 seconds
 Complete requests:      50000
 Failed requests:        0
-Non-2xx responses:      50000
-Total transferred:      6600000 bytes
-HTML transferred:       0 bytes
-Requests per second:    179.82 [#/sec] (mean)
-Time per request:       556.126 [ms] (mean)
-Time per request:       5.561 [ms] (mean, across all concurrent requests)
-Transfer rate:          23.18 [Kbytes/sec] received
+Total transferred:      8800000 bytes
+HTML transferred:       1700000 bytes
+Requests per second:    186.79 [#/sec] (mean)
+Time per request:       535.366 [ms] (mean)
+Time per request:       5.354 [ms] (mean, across all concurrent requests)
+Transfer rate:          32.10 [Kbytes/sec] received
 
 Connection Times (ms)
               min  mean[+/-sd] median   max
-Connect:        0  173 1196.6     66   21055
-Processing:     3  367 1175.9    207   21156
-Waiting:        3  326 1079.7    202   21150
-Total:          4  540 1699.1    283   21258
+Connect:        0  165 1082.6     59   17164
+Processing:     4  368 1067.4    229   17375
+Waiting:        4  357 1066.0    219   17374
+Total:          5  533 1513.7    301   21445
 
 Percentage of the requests served within a certain time (ms)
-  50%    283
-  66%    359
-  75%    394
-  80%    413
-  90%    516
-  95%    753
-  98%   4765
-  99%   7635
- 100%  21258 (longest request)
+  50%    301
+  66%    379
+  75%    432
+  80%    471
+  90%    629
+  95%    868
+  98%   1746
+  99%   9203
+ 100%  21445 (longest request)
 ```
 
 ## How to

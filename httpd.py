@@ -5,6 +5,7 @@ import socket
 import logging
 import argparse
 import threading
+import mimetypes
 from urllib.parse import unquote
 from collections import namedtuple
 
@@ -38,21 +39,8 @@ class WebServer:
 
     def get_mime_type(self, path):
         try:
-            ext = re.compile(r'^.*[.](?P<ext>html|css|js|jpeg|jpg|png|gif|swf|txt)$').match(path).group('ext')
-            if ext == 'html':
-                return f'text/{ext}'
-            if ext == 'css':
-                return f'text/{ext}'
-            if ext == 'js':
-                return 'text/javascript'
-            if ext in ('jpeg', 'jpg'):
-                return 'image/jpeg'
-            if ext in ('png', 'gif'):
-                return f'image/{ext}'
-            elif ext == 'swf':
-                return 'application/x-shockwave-flash'
-            if ext == 'txt':
-                return 'text/text'
+            ext = re.compile(r'^.*(?P<ext>\.(html|css|js|jpeg|jpg|png|gif|swf|txt))$').match(path).group('ext')
+            return mimetypes.types_map[ext]
         except AttributeError:
             logger.info(f'Extension of {path} is not allowed')
             return
@@ -64,40 +52,59 @@ class WebServer:
         except FileNotFoundError:
             return
 
-    def generate_main_headers(self, status, version='HTTP/1.1', content_type='', content_len=0):
+    def generate_main_headers(self, status, content_type='', content_len=0):
         time_now = time.strftime("%a, %d %b %Y %H:%M:%S", time.localtime())
-        http_header = f'{version} {status.code} {status.message}'
+        http_header = f'HTTP/1.1 {status.code} {status.message}'
         date_header = 'Date: {now}'.format(now=time_now)
         server_header = 'Server: Python-WebServer'
         connection_header = 'Connection: close'
-        type_header = f'Content-type: {content_type}'
-        len_header = f'Content-length: {content_len}\n\n'
+        type_header = f'Content-Type: {content_type}'
+        len_header = f'Content-Length: {content_len}\r\n\r\n'
 
-        return '\n'.join([http_header, date_header, server_header, connection_header, type_header, len_header])
+        return '\r\n'.join([http_header, date_header, server_header, connection_header, type_header, len_header])
+
+    def parse_requset(self):
+        pass
 
     def handle_request(self, client_socket):
+        buf_size = 1024
+        raw_request = b''
         try:
-            raw_request = client_socket.recv(1024)
+            while True:
+                chunk = client_socket.recv(buf_size)
+                if chunk:
+                    raw_request += chunk
+                    if raw_request.endswith(b'\r\n\r\n') or raw_request.endswith(b'\n\n'):
+                        raw_request = raw_request.strip()
+                        break
+                else:
+                    break
             request = re.split(' ', raw_request.decode())
             method = request[0] if request else None
             request_path = ''
             if len(request) > 1:
                 request_path = unquote(request[1])
-                version = re.compile(r'^(.*)\r\n(.*)').match(request[2]).group(1)
                 if '?' in request_path:
                     request_path = request_path[:request_path.index('?')]
-                if '../' in request_path:
-                    request_path = request_path.replace('../', '')
                 if request_path.endswith('/'):
                     request_path = os.path.join(request_path, 'index.html')
+
             response_mime_type = self.get_mime_type(request_path)
+            if not response_mime_type:
+                response_status = self.FORBIDDEN
+                client_socket.send(self.generate_main_headers(response_status).encode())
+                logger.info(f'{method} {request_path} {response_status.code}')
+                return
+
             if method not in ('GET', 'HEAD') or not request:
-                client_socket.send(self.generate_main_headers(self.NOT_ALLOWED).encode())
-                logger.info(f'{method} {request_path} {self.NOT_ALLOWED.code}')
+                response_status = self.NOT_ALLOWED
+                client_socket.send(self.generate_main_headers(response_status).encode())
+                logger.info(f'{method} {request_path} {response_status.code}')
                 return
             if method == 'HEAD':
-                client_socket.send(self.generate_main_headers(self.OK).encode())
-                logger.info(f'{method} {request_path} {self.OK.code}')
+                response_status = self.OK
+                client_socket.send(self.generate_main_headers(response_status, content_len=len(raw_request)).encode())
+                logger.info(f'{method} {request_path} {response_status.code}')
                 return
 
             file_path = os.path.join(self.path, request_path[1:])
@@ -110,7 +117,7 @@ class WebServer:
                 return
             else:
                 response_status = self.OK
-                headers = self.generate_main_headers(response_status, version=version, content_type=response_mime_type,
+                headers = self.generate_main_headers(response_status, content_type=response_mime_type,
                                                      content_len=len(file)).encode()
                 response = b''.join([headers, file])
                 client_socket.send(response)
