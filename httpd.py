@@ -4,10 +4,11 @@ import time
 import socket
 import logging
 import argparse
-import threading
 import mimetypes
+from pathlib import Path
 from urllib.parse import unquote
 from collections import namedtuple
+from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -25,17 +26,17 @@ class WebServer:
     NOT_FOUND = Status(404, 'Not Found')
     NOT_ALLOWED = Status(405, 'Method Not Allowed')
 
-    def __init__(self, host, port, con_num, path):
+    def __init__(self, host, port, workers_num, path):
         self.host = host
         self.port = port
-        self.con_num = con_num
+        self.workers_num = workers_num
         self.path = path
 
     def start(self):
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.server.bind((self.host, self.port))
-        self.server.listen(self.con_num)
+        self.server.listen(self.workers_num // 2)
 
     def get_mime_type(self, path):
         try:
@@ -63,9 +64,6 @@ class WebServer:
 
         return '\r\n'.join([http_header, date_header, server_header, connection_header, type_header, len_header])
 
-    def parse_requset(self):
-        pass
-
     def handle_request(self, client_socket):
         buf_size = 1024
         raw_request = b''
@@ -90,6 +88,13 @@ class WebServer:
                     request_path = os.path.join(request_path, 'index.html')
 
             response_mime_type = self.get_mime_type(request_path)
+            file_path = os.path.join(self.path, request_path[1:])
+            if not Path(file_path).exists():
+                response_status = self.NOT_FOUND
+                response = self.generate_main_headers(response_status)
+                client_socket.send(response.encode())
+                logger.info(f'{method} {request_path} {response_status.code}')
+                return
             if not response_mime_type:
                 response_status = self.FORBIDDEN
                 client_socket.send(self.generate_main_headers(response_status).encode())
@@ -103,19 +108,13 @@ class WebServer:
                 return
             if method == 'HEAD':
                 response_status = self.OK
-                client_socket.send(self.generate_main_headers(response_status, content_len=len(raw_request)).encode())
+                client_socket.send(
+                    self.generate_main_headers(response_status, content_len=Path(file_path).stat().st_size).encode())
                 logger.info(f'{method} {request_path} {response_status.code}')
                 return
 
-            file_path = os.path.join(self.path, request_path[1:])
             file = self.read_file(file_path)
-            if not file:
-                response_status = self.NOT_FOUND
-                response = self.generate_main_headers(response_status)
-                client_socket.send(response.encode())
-                logger.info(f'{method} {request_path} {response_status.code}')
-                return
-            else:
+            if method == 'GET':
                 response_status = self.OK
                 headers = self.generate_main_headers(response_status, content_type=response_mime_type,
                                                      content_len=len(file)).encode()
@@ -133,18 +132,15 @@ class WebServer:
         logger.info('Server has stopped')
 
     def serve_forever(self):
-        while True:
-            try:
-                client_socket, addr = self.server.accept()
-                client_handler = threading.Thread(
-                    target=self.handle_request,
-                    args=(client_socket,)
-                )
-                client_handler.start()
-            except KeyboardInterrupt:
-                logger.error("[!] Keyboard Interrupted!")
-                self.close()
-                break
+        with ThreadPoolExecutor(max_workers=self.workers_num) as executor:
+            while True:
+                try:
+                    client_socket, addr = self.server.accept()
+                    executor.submit(self.handle_request, client_socket)
+                except KeyboardInterrupt:
+                    logger.error("[!] Keyboard Interrupted!")
+                    self.close()
+                    break
 
 
 def get_args():
