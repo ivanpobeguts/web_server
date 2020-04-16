@@ -8,7 +8,7 @@ import mimetypes
 from pathlib import Path
 from urllib.parse import unquote
 from collections import namedtuple
-from concurrent.futures import ThreadPoolExecutor
+from multiprocessing.pool import ThreadPool
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -36,7 +36,7 @@ class WebServer:
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.server.bind((self.host, self.port))
-        self.server.listen(self.workers_num // 2)
+        self.server.listen(5)
 
     def get_mime_type(self, path):
         try:
@@ -132,15 +132,15 @@ class WebServer:
         logger.info('Server has stopped')
 
     def serve_forever(self):
-        with ThreadPoolExecutor(max_workers=self.workers_num) as executor:
-            while True:
-                try:
-                    client_socket, addr = self.server.accept()
-                    executor.submit(self.handle_request, client_socket)
-                except KeyboardInterrupt:
-                    logger.error("[!] Keyboard Interrupted!")
-                    self.close()
-                    break
+        pool = ThreadPool(self.workers_num)
+        while True:
+            try:
+                client_socket, addr = self.server.accept()
+                pool.map(self.handle_request, (client_socket,))
+            except KeyboardInterrupt:
+                logger.error("[!] Keyboard Interrupted!")
+                self.close()
+                break
 
 
 def get_args():
